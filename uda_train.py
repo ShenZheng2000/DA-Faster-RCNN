@@ -16,11 +16,11 @@ from detectron2.engine import default_writers
 import torch
 from detectron2.data.datasets import register_coco_instances, register_pascal_voc
 
-#FOR PASCAL VOC ANNOTATIONS
-register_pascal_voc("city_trainS", "drive/My Drive/cityscape/", "train_s", 2007, ['car','person','rider','truck','bus','train','motorcycle','bicycle'])
-register_pascal_voc("city_trainT", "drive/My Drive/cityscape/", "train_t", 2007, ['car','person','rider','truck','bus','train','motorcycle','bicycle'])
+# #FOR PASCAL VOC ANNOTATIONS
+# register_pascal_voc("city_trainS", "drive/My Drive/cityscape/", "train_s", 2007, ['car','person','rider','truck','bus','train','motorcycle','bicycle'])
+# register_pascal_voc("city_trainT", "drive/My Drive/cityscape/", "train_t", 2007, ['car','person','rider','truck','bus','train','motorcycle','bicycle'])
 
-register_pascal_voc("city_testT", "drive/My Drive/cityscape/", "test_t", 2007, ['car','person','rider','truck','bus','train','motorcycle','bicycle'])
+# register_pascal_voc("city_testT", "drive/My Drive/cityscape/", "test_t", 2007, ['car','person','rider','truck','bus','train','motorcycle','bicycle'])
 
 # #FOR COCO ANNOTATIONS   
 # register_coco_instances("dataset_train_synthetic", {}, "drive/My Drive/Bellomo_Dataset_UDA/synthetic/Object_annotations/Training_annotations.json", "./drive/My Drive/Bellomo_Dataset_UDA/synthetic/images")
@@ -29,6 +29,10 @@ register_pascal_voc("city_testT", "drive/My Drive/cityscape/", "test_t", 2007, [
 
 # NOTE: register train and test images
 data_path = '/root/autodl-tmp/Datasets'
+source_trainset = 'bdd100k_day_train'
+target_trainset = 'bdd100k_night_train'
+testset = 'bdd100k_night_val'
+output_path = './output/'
 
 register_coco_instances("bdd100k_day_train",
                         {},
@@ -101,12 +105,12 @@ def do_train(cfg_source, cfg_target, model, resume = False):
 cfg_source = get_cfg()
 cfg_source.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_C4_1x.yaml"))
 # cfg_source.DATASETS.TRAIN = ("balloon_train",)
-cfg_source.DATASETS.TRAIN = ("bdd100k_day_train",)
+cfg_source.DATASETS.TRAIN = (f"{source_trainset}",)
 cfg_source.DATALOADER.NUM_WORKERS = 2
 cfg_source.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_50_C4_1x.yaml")
-cfg_source.SOLVER.IMS_PER_BATCH = 1
+cfg_source.SOLVER.IMS_PER_BATCH = 1 # TODO: change this
 cfg_source.SOLVER.BASE_LR = 0.0002
-cfg_source.SOLVER.MAX_ITER = 30 # TODO: change this once debug is done
+cfg_source.SOLVER.MAX_ITER = 100000 # TODO: change this
 cfg_source.INPUT.MIN_SIZE_TRAIN = (600,)
 cfg_source.INPUT.MIN_SIZE_TEST = 0
 os.makedirs(cfg_source.OUTPUT_DIR, exist_ok=True)
@@ -116,10 +120,10 @@ model = build_model(cfg_source)
 
 cfg_target = get_cfg()
 # cfg_target.DATASETS.TRAIN = ("balloon_train",)
-cfg_target.DATASETS.TRAIN = ("bdd100k_night_train",)
+cfg_target.DATASETS.TRAIN = (f"{target_trainset}",)
 cfg_target.INPUT.MIN_SIZE_TRAIN = (600,)
 cfg_target.DATALOADER.NUM_WORKERS = 0
-cfg_target.SOLVER.IMS_PER_BATCH = 1
+cfg_target.SOLVER.IMS_PER_BATCH = 1 # TODO: change this
 
 do_train(cfg_source,cfg_target,model)
 
@@ -139,6 +143,6 @@ do_train(cfg_source,cfg_target,model)
 
 #COCO evaluation
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
-evaluator = COCOEvaluator("bdd100k_night_val", cfg_source, False, output_dir="./output/") # TODO: change output later
-val_loader = build_detection_test_loader(cfg_source, "bdd100k_night_val")
+evaluator = COCOEvaluator(f"{testset}", cfg_source, False, output_dir=f"{output_path}") # TODO: change output later
+val_loader = build_detection_test_loader(cfg_source, f"{testset}")
 inference_on_dataset(model, val_loader, evaluator)
