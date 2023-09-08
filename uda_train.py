@@ -1,3 +1,4 @@
+# TODO: when all is done, push to github!
 from detectron2.utils.logger import setup_logger
 setup_logger()
 import numpy as np
@@ -21,11 +22,28 @@ register_pascal_voc("city_trainT", "drive/My Drive/cityscape/", "train_t", 2007,
 
 register_pascal_voc("city_testT", "drive/My Drive/cityscape/", "test_t", 2007, ['car','person','rider','truck','bus','train','motorcycle','bicycle'])
 
-#FOR COCO ANNOTATIONS   
-register_coco_instances("dataset_train_synthetic", {}, "drive/My Drive/Bellomo_Dataset_UDA/synthetic/Object_annotations/Training_annotations.json", "./drive/My Drive/Bellomo_Dataset_UDA/synthetic/images")
-register_coco_instances("dataset_train_real", {}, "drive/My Drive/Bellomo_Dataset_UDA/real_hololens/training/training_set.json", "./drive/My Drive/Bellomo_Dataset_UDA/real_hololens/training")
+# #FOR COCO ANNOTATIONS   
+# register_coco_instances("dataset_train_synthetic", {}, "drive/My Drive/Bellomo_Dataset_UDA/synthetic/Object_annotations/Training_annotations.json", "./drive/My Drive/Bellomo_Dataset_UDA/synthetic/images")
+# register_coco_instances("dataset_train_real", {}, "drive/My Drive/Bellomo_Dataset_UDA/real_hololens/training/training_set.json", "./drive/My Drive/Bellomo_Dataset_UDA/real_hololens/training")
+# register_coco_instances("dataset_test_real", {}, "drive/My Drive/Bellomo_Dataset_UDA/real_hololens/test/test_set.json", "./drive/My Drive/Bellomo_Dataset_UDA/real_hololens/test")
 
-register_coco_instances("dataset_test_real", {}, "drive/My Drive/Bellomo_Dataset_UDA/real_hololens/test/test_set.json", "./drive/My Drive/Bellomo_Dataset_UDA/real_hololens/test")
+# NOTE: register train and test images
+data_path = '/root/autodl-tmp/Datasets'
+
+register_coco_instances("bdd100k_day_train",
+                        {},
+                        f'{data_path}/bdd100k/coco_labels/train_day.json',
+                        f'{data_path}/bdd100k/images/100k/train')
+
+register_coco_instances("bdd100k_night_train",
+                        {},
+                        f'{data_path}/bdd100k/coco_labels/train_night.json',
+                        f'{data_path}/bdd100k/images/100k/train')
+
+register_coco_instances("bdd100k_night_val",
+                        {},
+                        f'{data_path}/bdd100k/coco_labels/val_night.json',
+                        f'{data_path}/bdd100k/images/100k/val')
 
 logger = logging.getLogger("detectron2")
 
@@ -82,36 +100,45 @@ def do_train(cfg_source, cfg_target, model, resume = False):
 
 cfg_source = get_cfg()
 cfg_source.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_C4_1x.yaml"))
-cfg_source.DATASETS.TRAIN = ("balloon_train",)
+# cfg_source.DATASETS.TRAIN = ("balloon_train",)
+cfg_source.DATASETS.TRAIN = ("bdd100k_day_train",)
 cfg_source.DATALOADER.NUM_WORKERS = 2
 cfg_source.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_50_C4_1x.yaml")
 cfg_source.SOLVER.IMS_PER_BATCH = 1
 cfg_source.SOLVER.BASE_LR = 0.0002
-cfg_source.SOLVER.MAX_ITER = 30
+cfg_source.SOLVER.MAX_ITER = 30 # TODO: change this once debug is done
 cfg_source.INPUT.MIN_SIZE_TRAIN = (600,)
 cfg_source.INPUT.MIN_SIZE_TEST = 0
 os.makedirs(cfg_source.OUTPUT_DIR, exist_ok=True)
-cfg_source.MODEL.ROI_HEADS.NUM_CLASSES = 1
+# cfg_source.MODEL.ROI_HEADS.NUM_CLASSES = 1
+cfg_source.MODEL.ROI_HEADS.NUM_CLASSES = 10
 model = build_model(cfg_source)
 
 cfg_target = get_cfg()
-cfg_target.DATASETS.TRAIN = ("balloon_train",)
+# cfg_target.DATASETS.TRAIN = ("balloon_train",)
+cfg_target.DATASETS.TRAIN = ("bdd100k_night_train",)
 cfg_target.INPUT.MIN_SIZE_TRAIN = (600,)
 cfg_target.DATALOADER.NUM_WORKERS = 0
 cfg_target.SOLVER.IMS_PER_BATCH = 1
 
 do_train(cfg_source,cfg_target,model)
 
-#PASCAL VOC evaluation
-from detectron2.evaluation import inference_on_dataset, PascalVOCDetectionEvaluator
-from detectron2.data import build_detection_test_loader
-evaluator = PascalVOCDetectionEvaluator("city_testT")
-val_loader = build_detection_test_loader(cfg_source, "city_testT")
-res = inference_on_dataset(model, val_loader, evaluator)
-print(res)
+# #PASCAL VOC evaluation
+# from detectron2.evaluation import inference_on_dataset, PascalVOCDetectionEvaluator
+# from detectron2.data import build_detection_test_loader
+# evaluator = PascalVOCDetectionEvaluator("city_testT")
+# val_loader = build_detection_test_loader(cfg_source, "city_testT")
+# res = inference_on_dataset(model, val_loader, evaluator)
+# print(res)
+
+# #COCO evaluation
+# from detectron2.evaluation import COCOEvaluator, inference_on_dataset
+# evaluator = COCOEvaluator("balloon_test", cfg_source, False, output_dir="./output/")
+# val_loader = build_detection_test_loader(cfg_source, "balloon_test")
+# inference_on_dataset(model, val_loader, evaluator)
 
 #COCO evaluation
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
-evaluator = COCOEvaluator("balloon_test", cfg_source, False, output_dir="./output/")
-val_loader = build_detection_test_loader(cfg_source, "balloon_test")
+evaluator = COCOEvaluator("bdd100k_night_val", cfg_source, False, output_dir="./output/") # TODO: change output later
+val_loader = build_detection_test_loader(cfg_source, "bdd100k_night_val")
 inference_on_dataset(model, val_loader, evaluator)
