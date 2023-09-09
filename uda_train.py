@@ -1,4 +1,24 @@
-# TODO: when all is done, push to github!
+from detectron2.utils.comm import get_world_size, get_rank
+import torch.distributed as dist
+import torch
+
+if not dist.is_initialized():
+    torch.cuda.set_device(get_rank())
+    dist.init_process_group(backend="nccl")
+
+import argparse
+
+parser = argparse.ArgumentParser(description="Detectron2 distributed training")
+parser.add_argument("--local_rank", type=int, default=0, help="Local rank for distributed training")
+parser.add_argument('--data-path', type=str, default='/root/autodl-tmp/Datasets', help='Path to the data directory')
+parser.add_argument('--source-trainset', type=str, default='bdd100k_day_train', help='Source training set name')
+parser.add_argument('--target-trainset', type=str, default='bdd100k_night_train', help='Target training set name')
+parser.add_argument('--testset', type=str, default='bdd100k_night_val', help='Test set name')
+parser.add_argument('--output-path', type=str, default='./output/', help='Output directory')
+args = parser.parse_args()
+
+torch.cuda.set_device(args.local_rank)
+
 from detectron2.utils.logger import setup_logger
 setup_logger()
 import numpy as np
@@ -27,12 +47,12 @@ from detectron2.data.datasets import register_coco_instances, register_pascal_vo
 # register_coco_instances("dataset_train_real", {}, "drive/My Drive/Bellomo_Dataset_UDA/real_hololens/training/training_set.json", "./drive/My Drive/Bellomo_Dataset_UDA/real_hololens/training")
 # register_coco_instances("dataset_test_real", {}, "drive/My Drive/Bellomo_Dataset_UDA/real_hololens/test/test_set.json", "./drive/My Drive/Bellomo_Dataset_UDA/real_hololens/test")
 
-# NOTE: register train and test images
-data_path = '/root/autodl-tmp/Datasets'
-source_trainset = 'bdd100k_day_train'
-target_trainset = 'bdd100k_night_train'
-testset = 'bdd100k_night_val'
-output_path = './output/'
+# NOTE: read these path from parse args
+data_path = args.data_path
+source_trainset = args.source_trainset
+target_trainset = args.target_trainset
+testset = args.testset
+output_path = args.output_path
 
 register_coco_instances("bdd100k_day_train",
                         {},
@@ -108,9 +128,9 @@ cfg_source.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn
 cfg_source.DATASETS.TRAIN = (f"{source_trainset}",)
 cfg_source.DATALOADER.NUM_WORKERS = 2
 cfg_source.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_50_C4_1x.yaml")
-cfg_source.SOLVER.IMS_PER_BATCH = 1 # TODO: change this
+cfg_source.SOLVER.IMS_PER_BATCH = 9 # NOTE: change this
 cfg_source.SOLVER.BASE_LR = 0.0002
-cfg_source.SOLVER.MAX_ITER = 100000 # TODO: change this
+cfg_source.SOLVER.MAX_ITER = 200000 # NOTE: change this
 cfg_source.INPUT.MIN_SIZE_TRAIN = (600,)
 cfg_source.INPUT.MIN_SIZE_TEST = 0
 os.makedirs(cfg_source.OUTPUT_DIR, exist_ok=True)
@@ -123,7 +143,11 @@ cfg_target = get_cfg()
 cfg_target.DATASETS.TRAIN = (f"{target_trainset}",)
 cfg_target.INPUT.MIN_SIZE_TRAIN = (600,)
 cfg_target.DATALOADER.NUM_WORKERS = 0
-cfg_target.SOLVER.IMS_PER_BATCH = 1 # TODO: change this
+cfg_target.SOLVER.IMS_PER_BATCH = 9 # NOTE: change this
+
+model = torch.nn.parallel.DistributedDataParallel(
+    model, device_ids=[get_rank()], broadcast_buffers=False
+)
 
 do_train(cfg_source,cfg_target,model)
 
@@ -143,6 +167,6 @@ do_train(cfg_source,cfg_target,model)
 
 #COCO evaluation
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
-evaluator = COCOEvaluator(f"{testset}", cfg_source, False, output_dir=f"{output_path}") # TODO: change output later
+evaluator = COCOEvaluator(f"{testset}", cfg_source, False, output_dir=f"{output_path}")
 val_loader = build_detection_test_loader(cfg_source, f"{testset}")
 inference_on_dataset(model, val_loader, evaluator)
