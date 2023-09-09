@@ -3,6 +3,7 @@ run_training() {
     baseline="$1"
     output_path="./output/${baseline}"
     warp="$2"
+    source_trainset="$3"
 
     # export NCCL_DEBUG=INFO
 
@@ -12,8 +13,9 @@ run_training() {
             uda_train.py \
             --output-path "${output_path}" \
             --warp-aug-lzu "${warp}" \
+            --source-trainset "${source_trainset}" \
           > "${baseline}.out" 2>&1 &
 }
 
 # run_training "baseline_9_8"
-run_training "warp_9_8" True
+run_training "warp_9_8" True "bdd100k_day_train_valid_vp"
