@@ -1,24 +1,6 @@
 from detectron2.utils.comm import get_world_size, get_rank
 import torch.distributed as dist
 import torch
-
-if not dist.is_initialized():
-    torch.cuda.set_device(get_rank())
-    dist.init_process_group(backend="nccl")
-
-import argparse
-
-parser = argparse.ArgumentParser(description="Detectron2 distributed training")
-parser.add_argument("--local_rank", type=int, default=0, help="Local rank for distributed training")
-parser.add_argument('--data-path', type=str, default='/root/autodl-tmp/Datasets', help='Path to the data directory')
-parser.add_argument('--source-trainset', type=str, default='bdd100k_day_train', help='Source training set name')
-parser.add_argument('--target-trainset', type=str, default='bdd100k_night_train', help='Target training set name')
-parser.add_argument('--testset', type=str, default='bdd100k_night_val', help='Test set name')
-parser.add_argument('--output-path', type=str, default='./output/', help='Output directory')
-args = parser.parse_args()
-
-torch.cuda.set_device(args.local_rank)
-
 from detectron2.utils.logger import setup_logger
 setup_logger()
 import numpy as np
@@ -35,6 +17,28 @@ from detectron2.utils.events import EventStorage
 from detectron2.engine import default_writers
 import torch
 from detectron2.data.datasets import register_coco_instances, register_pascal_voc
+
+from detectron2.modeling.transforms.grid_generator import CuboidGlobalKDEGrid
+
+if not dist.is_initialized():
+    torch.cuda.set_device(get_rank())
+    dist.init_process_group(backend="nccl")
+
+import argparse
+import json
+
+parser = argparse.ArgumentParser(description="Detectron2 distributed training")
+parser.add_argument("--local_rank", type=int, default=0, help="Local rank for distributed training")
+parser.add_argument('--data-path', type=str, default='/root/autodl-tmp/Datasets', help='Path to the data directory')
+parser.add_argument('--source-trainset', type=str, default='bdd100k_day_train', help='Source training set name')
+parser.add_argument('--target-trainset', type=str, default='bdd100k_night_train', help='Target training set name')
+parser.add_argument('--testset', type=str, default='bdd100k_night_val', help='Test set name')
+parser.add_argument('--output-path', type=str, default='./output/', help='Output directory')
+parser.add_argument('--warp-aug-lzu', type=bool, default=False, help='Whether to use lzu warp aug')
+parser.add_argument('--vp-path', type=str, default='/root/autodl-tmp/Datasets/VP/train_day.json', help='path to vp json')
+args = parser.parse_args()
+
+torch.cuda.set_device(args.local_rank)
 
 # #FOR PASCAL VOC ANNOTATIONS
 # register_pascal_voc("city_trainS", "drive/My Drive/cityscape/", "train_s", 2007, ['car','person','rider','truck','bus','train','motorcycle','bicycle'])
@@ -53,6 +57,8 @@ source_trainset = args.source_trainset
 target_trainset = args.target_trainset
 testset = args.testset
 output_path = args.output_path
+warp_aug_lzu = args.warp_aug_lzu
+vp_path = args.vp_path
 
 register_coco_instances("bdd100k_day_train",
                         {},
@@ -72,6 +78,16 @@ register_coco_instances("bdd100k_night_val",
 logger = logging.getLogger("detectron2")
 
 def do_train(cfg_source, cfg_target, model, resume = False):
+
+    # NOTE: init stuffs for warpping
+    with open(vp_path, 'r') as f:
+        vp_dict = json.load(f)
+    vp_dict = {os.path.basename(k): v for k, v in vp_dict.items()}
+
+    grid_net = CuboidGlobalKDEGrid(separable=True, 
+                                    anti_crop=True, 
+                                    input_shape=(600, 1067), # NOTE: hardcode shape for BDD now
+                                    output_shape=(600, 1067)) # NOTE: hardcode shape for BDD now
     
     model.train()
     optimizer = build_optimizer(cfg_source, model)
@@ -92,8 +108,9 @@ def do_train(cfg_source, cfg_target, model, resume = False):
         for data_source, data_target, iteration in zip(data_loader_source, data_loader_target, range(start_iter, max_iter)):
             storage.iter = iteration
 
-            loss_dict = model(data_source, False, 0.1)
-            loss_dict_target = model(data_target, True, 0.1)
+            loss_dict = model(data_source, target_domain=False, alpha=0.1, 
+                                warp_aug_lzu=warp_aug_lzu, vp_dict=vp_dict, grid_net=grid_net)
+            loss_dict_target = model(data_target, target_domain=True, alpha=0.1)
             
             loss_dict["loss_image_d"] += loss_dict_target["loss_image_d"]
             loss_dict["loss_instance_d"] += loss_dict_target["loss_instance_d"]
